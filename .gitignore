@@ -1,0 +1,5 @@
+*.exe
+.env
+*.7z
+nostr
+main.go1
