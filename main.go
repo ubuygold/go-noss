@@ -107,7 +107,7 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 	// Create a channel to signal the finding of a valid nonce
 	foundEvent := make(chan nostr.Event, 1)
 	// Create a channel to signal all workers to stop
-	content := `{"p":"nrc-20","op":"mint","tick":"noss","amt":"10"}`
+	content := "{\"p\":\"nrc-20\",\"op\":\"mint\",\"tick\":\"noss\",\"amt\":\"10\"}"
 	startTime := time.Now()
 
 	ev := nostr.Event{
@@ -166,19 +166,27 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 		}
 
 		// 将包装后的对象序列化成JSON
-		wrapperJSON, err := json.MarshalIndent(wrapper, "", "  ") // 使用MarshalIndent美化输出
+		wrapperJSON, err := json.Marshal(wrapper) 
 		if err != nil {
 			log.Fatalf("Error marshaling wrapper: %v", err)
 		}
 
 		url := "https://api-worker.noscription.org/inscribe/postEvent"
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(wrapperJSON))
+		// fmt.Print(bytes.NewBuffer(wrapperJSON))
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(wrapperJSON)) // 修改了弱智项目方不识别美化Json的bug
 		if err != nil {
 			log.Fatalf("Error creating request: %v", err)
 		}
 
 		// 设置HTTP Header
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
+		req.Header.Set("Sec-ch-ua",  "\"Not A(Brand\";v=\"99\", \"Microsoft Edge\";v=\"121\", \"Chromium\";v=\"121\"")
+		req.Header.Set("Sec-ch-ua-mobile", "?0")
+        req.Header.Set("Sec-ch-ua-platform", "\"Windows\"")
+        req.Header.Set("Sec-fetch-dest", "empty")
+        req.Header.Set("Sec-fetch-mode", "cors")
+        req.Header.Set("Sec-fetch-site", "same-site")
 
 		// 发送请求
 		client := &http.Client{}
