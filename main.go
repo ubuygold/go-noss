@@ -27,8 +27,8 @@ var pk string
 var numberOfWorkers int
 var nonceFound int32 = 0
 var blockNumber uint64
-var hash string
-var messageId string
+var hash atomic.Value
+var messageId atomic.Value
 var currentWorkers int32
 var arbRpcUrl string
 
@@ -106,6 +106,7 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 
 	// Create a channel to signal the finding of a valid nonce
 	foundEvent := make(chan nostr.Event, 1)
+	notFound := make(chan nostr.Event, 1)
 	// Create a channel to signal all workers to stop
 	content := "{\"p\":\"nrc-20\",\"op\":\"mint\",\"tick\":\"noss\",\"amt\":\"10\"}"
 	startTime := time.Now()
@@ -122,27 +123,25 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 	ev.Tags = ev.Tags.AppendUnique(nostr.Tag{"p", "9be107b0d7218c67b4954ee3e6bd9e4dba06ef937a93f684e42f730a0c3d053c"})
 	ev.Tags = ev.Tags.AppendUnique(nostr.Tag{"e", "51ed7939a984edee863bfbb2e66fdc80436b000a8ddca442d83e6a2bf1636a95", replayUrl, "root"})
 	ev.Tags = ev.Tags.AppendUnique(nostr.Tag{"e", messageId, replayUrl, "reply"})
-	ev.Tags = ev.Tags.AppendUnique(nostr.Tag{"seq_witness", strconv.Itoa(int(blockNumber)), hash})
+	ev.Tags = ev.Tags.AppendUnique(nostr.Tag{"seq_witness", strconv.Itoa(int(blockNumber)), hash.Load().(string)})
 	// Start multiple worker goroutines
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				evCopy := ev
-				evCopy, err := Generate(evCopy, difficulty)
-				if err != nil {
-					// fmt.Println(err)
-					atomic.AddInt32(&currentWorkers, -1)
-					return
-				}
-				foundEvent <- evCopy
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			evCopy := ev
+			evCopy, err := Generate(evCopy, difficulty)
+			if err != nil {
+				// fmt.Println(err)
+				notFound <- evCopy
 			}
+			foundEvent <- evCopy
 		}
 	}()
 
 	select {
+	case <-notFound:
 	case evNew := <-foundEvent:
 		evNew.Sign(sk)
 
@@ -166,7 +165,7 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 		}
 
 		// 将包装后的对象序列化成JSON
-		wrapperJSON, err := json.Marshal(wrapper) 
+		wrapperJSON, err := json.Marshal(wrapper)
 		if err != nil {
 			log.Fatalf("Error marshaling wrapper: %v", err)
 		}
@@ -181,12 +180,12 @@ func mine(ctx context.Context, messageId string, client *ethclient.Client) {
 		// 设置HTTP Header
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
-		req.Header.Set("Sec-ch-ua",  "\"Not A(Brand\";v=\"99\", \"Microsoft Edge\";v=\"121\", \"Chromium\";v=\"121\"")
+		req.Header.Set("Sec-ch-ua", "\"Not A(Brand\";v=\"99\", \"Microsoft Edge\";v=\"121\", \"Chromium\";v=\"121\"")
 		req.Header.Set("Sec-ch-ua-mobile", "?0")
-        req.Header.Set("Sec-ch-ua-platform", "\"Windows\"")
-        req.Header.Set("Sec-fetch-dest", "empty")
-        req.Header.Set("Sec-fetch-mode", "cors")
-        req.Header.Set("Sec-fetch-site", "same-site")
+		req.Header.Set("Sec-ch-ua-platform", "\"Windows\"")
+		req.Header.Set("Sec-fetch-dest", "empty")
+		req.Header.Set("Sec-fetch-mode", "cors")
+		req.Header.Set("Sec-fetch-site", "same-site")
 
 		// 发送请求
 		client := &http.Client{}
@@ -259,8 +258,8 @@ func main() {
 				log.Fatalf("无法获取最新区块号: %v", err)
 			}
 			if header.Number.Uint64() >= blockNumber {
-				hash = header.Hash().Hex()
-				blockNumber = header.Number.Uint64()
+				hash.Store(header.Hash().Hex())
+				atomic.StoreUint64(&blockNumber, header.Number.Uint64())
 			}
 		}
 	}()
@@ -278,7 +277,7 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			messageId = messageDecode.EventId
+			messageId.Store(messageDecode.EventId)
 		}
 
 	}()
@@ -295,12 +294,12 @@ func main() {
 			case <-ctx.Done(): // 如果上下文被取消，则退出协程
 				return
 			default:
-				if atomic.LoadInt32(&currentWorkers) < int32(numberOfWorkers) {
+				if atomic.LoadInt32(&currentWorkers) < int32(numberOfWorkers) && messageId.Load() != nil && blockNumber > 0 {
 					atomic.AddInt32(&currentWorkers, 1) // 增加工作者数量
 					go func(bn uint64, mid string) {
 						defer atomic.AddInt32(&currentWorkers, -1) // 完成后减少工作者数量
 						mine(ctx, mid, client)
-					}(blockNumber, messageId)
+					}(blockNumber, messageId.Load().(string))
 				}
 			}
 		}
