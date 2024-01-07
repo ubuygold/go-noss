@@ -37,7 +37,6 @@ func (c *ArbitrumChain) ListenNewHeader() {
 	}
 	go func() {
 		for head := range listener {
-			fmt.Println(head.Hash().Hex(), head.Number.Uint64())
 			c.latestHex.Store(head.Hash().Hex())
 			atomic.StoreUint64(&c.latestNumber, head.Number.Uint64())
 

@@ -2,10 +2,10 @@ package miner
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/nbd-wtf/go-nostr/nip13"
 	"github.com/sirupsen/logrus"
 	"net/http"
 	arbitrum "nostr/arbitrum_chain"
@@ -131,12 +131,11 @@ func generate(event *nostr.Event, targetDifficulty int) (*nostr.Event, error) {
 	for {
 		tag[1] = fastRand.Rand(nonce)
 		event.CreatedAt = nostr.Now()
-		if nip13.Difficulty(event.GetID()) >= targetDifficulty {
+		// hack 直接使用位运算来判断前21位是否为0，略微提高效率
+		if difficulty21(sha256.Sum256(event.Serialize())) {
+			//if nip13.Difficulty(event.GetID()) >= targetDifficulty {
 			return event, nil
 		}
-		//if difficulty21(sha256.Sum256(event.Serialize())) {
-		//	return event, nil
-		//}
 		// 超过1秒钟就重新挖
 		if time.Since(start) >= MineTimeout {
 			return event, ErrGenerateTimeout
@@ -144,10 +143,6 @@ func generate(event *nostr.Event, targetDifficulty int) (*nostr.Event, error) {
 	}
 }
 
-func difficulty21(hex [32]byte) bool {
-	if hex[0] == 0 && hex[1] == 0 && hex[2] <= 5 {
-		return true
-	} else {
-		return false
-	}
+func difficulty21(h [32]byte) bool {
+	return h[0] == 0 && h[1] == 0 && (h[2]&0xF8) == 0
 }
