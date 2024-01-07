@@ -42,7 +42,7 @@ func main() {
 
 	for i := 0; i < workers; i++ {
 		logrus.Println("启动 Miner", i)
-		go miner.NewMiner(arbitrumChain, nossChain, pk, sk).Mine()
+		go miner.NewMiner(arbitrumChain, nossChain, pk, sk).Mining()
 	}
 
 	select {}

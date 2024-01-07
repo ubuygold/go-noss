@@ -11,7 +11,6 @@ import (
 	arbitrum "nostr/arbitrum_chain"
 	noss "nostr/noss_chain"
 	rander "nostr/pkg/rander"
-	"nostr/pkg/ring_buffer"
 	"strconv"
 	"time"
 )
@@ -35,8 +34,6 @@ type Miner struct {
 	noss      *noss.NossChain
 	publicKey string
 	secretKey string
-
-	cache *ring_buffer.RingBuffer[string]
 }
 
 func NewMiner(arb *arbitrum.ArbitrumChain, noss *noss.NossChain, publicKey, secretKey string) *Miner {
@@ -45,12 +42,10 @@ func NewMiner(arb *arbitrum.ArbitrumChain, noss *noss.NossChain, publicKey, secr
 		secretKey: secretKey,
 		arb:       arb,
 		noss:      noss,
-		// 缓存最近提交的200个记录，如果在noss_chain中接收到了，那么应该是自己挖到了
-		cache: ring_buffer.NewRingBuffer[string](200),
 	}
 }
 
-func (m *Miner) Mine() {
+func (m *Miner) Mining() {
 	for {
 		ev := &nostr.Event{
 			Content:   message,
@@ -121,7 +116,7 @@ func (m *Miner) postEvent(event *nostr.Event) {
 	logrus.Info("published to: ", event.ID, " Response Status: ", resp.Status)
 }
 
-var fastRand = rander.NewRander([]byte("abcdefghijklmnopqrstuvwxyz0123456789"))
+var rand = rander.NewRander([]byte("abcdefghijklmnopqrstuvwxyz0123456789"))
 
 func generate(event *nostr.Event, targetDifficulty int) (*nostr.Event, error) {
 	tag := nostr.Tag{"nonce", "", strconv.Itoa(targetDifficulty)}
@@ -129,7 +124,7 @@ func generate(event *nostr.Event, targetDifficulty int) (*nostr.Event, error) {
 	start := time.Now()
 	nonce := make([]byte, 10)
 	for {
-		tag[1] = fastRand.Rand(nonce)
+		tag[1] = rand.Rand(nonce)
 		event.CreatedAt = nostr.Now()
 		// hack 直接使用位运算来判断前21位是否为0，略微提高效率
 		if difficulty21(sha256.Sum256(event.Serialize())) {
